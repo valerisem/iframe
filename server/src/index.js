@@ -31,7 +31,10 @@ const allowedHosts = ALLOWED_HOSTS.length ? ALLOWED_HOSTS : DEFAULT_ALLOWED_HOST
 
 app.use(helmet({
   contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginResourcePolicy: false,
+  frameguard: false
 }));
 app.use(cors({
   origin: true,
@@ -152,6 +155,8 @@ app.get(PROXY_BASE_PATH, async (req, res) => {
     for (const [key, value] of Object.entries(headers)) {
       res.setHeader(key, value);
     }
+    res.removeHeader("x-frame-options");
+    res.removeHeader("frame-options");
 
     if (contentType.includes("text/html")) {
       res.removeHeader("content-encoding");
@@ -196,6 +201,8 @@ app.get(ASSET_BASE_PATH, async (req, res) => {
     for (const [key, value] of Object.entries(headers)) {
       res.setHeader(key, value);
     }
+    res.removeHeader("x-frame-options");
+    res.removeHeader("frame-options");
     res.status(upstream.status);
     if (upstream.body) {
       Readable.fromWeb(upstream.body).pipe(res);
