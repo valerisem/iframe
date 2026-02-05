@@ -107,6 +107,7 @@ async function fetchUpstream(targetUrl, req) {
     "user-agent": req.headers["user-agent"] || "Mozilla/5.0",
     "accept": req.headers["accept"] || "*/*",
     "accept-language": req.headers["accept-language"] || "en-GB,en;q=0.9",
+    "accept-encoding": "identity",
     "referer": targetUrl.origin
   };
 
@@ -153,6 +154,8 @@ app.get(PROXY_BASE_PATH, async (req, res) => {
     }
 
     if (contentType.includes("text/html")) {
+      res.removeHeader("content-encoding");
+      res.removeHeader("content-length");
       const text = await upstream.text();
       const rewritten = rewriteHtml(text, targetUrl);
       res.setHeader("content-type", "text/html; charset=utf-8");
