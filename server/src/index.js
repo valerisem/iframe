@@ -234,6 +234,7 @@ app.get(ASSET_BASE_PATH, async (req, res) => {
 
 app.get(VIDEO_BASE_PATH, async (req, res) => {
   const urlParam = req.query.url;
+  const debug = req.query.debug === "1";
   if (!urlParam) {
     return res.status(400).json({ error: "Missing url" });
   }
@@ -255,6 +256,17 @@ app.get(VIDEO_BASE_PATH, async (req, res) => {
     const videoUrl = extractVideoUrl(html);
 
     if (!videoUrl) {
+      if (debug) {
+        res.setHeader("content-type", "text/html; charset=utf-8");
+        return res.status(422).send(`<!doctype html>
+<html>
+  <head><meta charset="utf-8" /><title>Debug</title></head>
+  <body>
+    <h3>Could not extract video URL</h3>
+    <pre>${html.slice(0, 2000).replace(/</g, "&lt;")}</pre>
+  </body>
+</html>`);
+      }
       return res.status(422).send("Could not extract video URL.");
     }
 
