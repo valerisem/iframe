@@ -115,11 +115,96 @@ function decodeEscapedUrl(value) {
     .replace(/\\\\/g, "\\");
 }
 
+function findVideoUrlInObject(root) {
+  const stack = [root];
+  const seen = new Set();
+
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node) continue;
+
+    if (typeof node === "string") {
+      const match = node.match(/https?:\\/\\/[^\\s"]+\\.mp4[^\\s"]*/);
+      if (match?.[0]) return decodeEscapedUrl(match[0]);
+      continue;
+    }
+
+    if (typeof node !== "object") continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+
+    if (Array.isArray(node)) {
+      for (const item of node) stack.push(item);
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (
+        key === "playAddr" ||
+        key === "downloadAddr" ||
+        key === "playAddrH264" ||
+        key === "playAddrBytevc1"
+      ) {
+        if (typeof value === "string") return decodeEscapedUrl(value);
+      }
+      stack.push(value);
+    }
+  }
+
+  return "";
+}
+
 function extractVideoUrl(html) {
+  const $ = loadHtml(html);
+  const sigi = $("#SIGI_STATE").text();
+  if (sigi) {
+    try {
+      const data = JSON.parse(sigi);
+      const found = findVideoUrlInObject(data);
+      if (found) return found;
+    } catch {
+      // ignore
+    }
+  }
+
+  const universal = $("#__UNIVERSAL_DATA_FOR_REHYDRATION__").text();
+  if (universal) {
+    try {
+      const data = JSON.parse(universal);
+      const found = findVideoUrlInObject(data);
+      if (found) return found;
+    } catch {
+      // ignore
+    }
+  }
+
+  const nextData = $("#__NEXT_DATA__").text();
+  if (nextData) {
+    try {
+      const data = JSON.parse(nextData);
+      const found = findVideoUrlInObject(data);
+      if (found) return found;
+    } catch {
+      // ignore
+    }
+  }
+
   const playAddrMatch = html.match(/"playAddr":"(https:[^"]+)"/);
   if (playAddrMatch?.[1]) return decodeEscapedUrl(playAddrMatch[1]);
   const downloadAddrMatch = html.match(/"downloadAddr":"(https:[^"]+)"/);
   if (downloadAddrMatch?.[1]) return decodeEscapedUrl(downloadAddrMatch[1]);
+
+  const sigiMatch = html.match(/SIGI_STATE['"]?\\]?\\s*[:=]\\s*({.*?})\\s*;\\s*window/s);
+  if (sigiMatch?.[1]) {
+    try {
+      const data = JSON.parse(sigiMatch[1]);
+      const found = findVideoUrlInObject(data);
+      if (found) return found;
+    } catch {
+      // ignore
+    }
+  }
+
   return "";
 }
 
