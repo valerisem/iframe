@@ -229,6 +229,12 @@ async function fetchUpstream(targetUrl, req) {
   return res;
 }
 
+function extractVideoIdFromUrl(urlString) {
+  if (!urlString) return "";
+  const match = urlString.match(/\/video\/(\d+)/);
+  return match?.[1] || "";
+}
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -341,6 +347,28 @@ app.get(VIDEO_BASE_PATH, async (req, res) => {
     const videoUrl = extractVideoUrl(html);
 
     if (!videoUrl) {
+      const finalUrl = upstream.url || targetUrl.toString();
+      const videoId = extractVideoIdFromUrl(finalUrl);
+      if (videoId) {
+        const embedUrl = `https://www.tiktok.com/embed/v2/${videoId}`;
+        res.setHeader("content-type", "text/html; charset=utf-8");
+        return res.send(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TikTok Video</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; }
+      iframe { width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <iframe src="${makeAssetUrl(embedUrl)}" allow="autoplay; fullscreen; clipboard-read; clipboard-write"></iframe>
+  </body>
+</html>`);
+      }
+
       if (debug) {
         res.setHeader("content-type", "text/html; charset=utf-8");
         return res.status(422).send(`<!doctype html>
@@ -348,6 +376,7 @@ app.get(VIDEO_BASE_PATH, async (req, res) => {
   <head><meta charset="utf-8" /><title>Debug</title></head>
   <body>
     <h3>Could not extract video URL</h3>
+    <div>Final URL: ${finalUrl}</div>
     <pre>${html.slice(0, 2000).replace(/</g, "&lt;")}</pre>
   </body>
 </html>`);
