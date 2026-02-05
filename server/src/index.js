@@ -12,6 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 8787;
 const PROXY_BASE_PATH = process.env.PROXY_BASE_PATH || "/proxy";
 const ASSET_BASE_PATH = process.env.ASSET_BASE_PATH || "/asset";
+const VIDEO_BASE_PATH = process.env.VIDEO_BASE_PATH || "/video";
 
 const DEFAULT_ALLOWED_HOSTS = [
   ".tiktok.com",
@@ -103,6 +104,23 @@ function stripProblemHeaders(headers) {
     }
   }
   return result;
+}
+
+function decodeEscapedUrl(value) {
+  if (!value) return "";
+  return value
+    .replace(/\\u002F/g, "/")
+    .replace(/\\u0026/g, "&")
+    .replace(/\\u003D/g, "=")
+    .replace(/\\\\/g, "\\");
+}
+
+function extractVideoUrl(html) {
+  const playAddrMatch = html.match(/"playAddr":"(https:[^"]+)"/);
+  if (playAddrMatch?.[1]) return decodeEscapedUrl(playAddrMatch[1]);
+  const downloadAddrMatch = html.match(/"downloadAddr":"(https:[^"]+)"/);
+  if (downloadAddrMatch?.[1]) return decodeEscapedUrl(downloadAddrMatch[1]);
+  return "";
 }
 
 async function fetchUpstream(targetUrl, req) {
@@ -211,6 +229,54 @@ app.get(ASSET_BASE_PATH, async (req, res) => {
     }
   } catch {
     res.status(502).json({ error: "Proxy failed" });
+  }
+});
+
+app.get(VIDEO_BASE_PATH, async (req, res) => {
+  const urlParam = req.query.url;
+  if (!urlParam) {
+    return res.status(400).json({ error: "Missing url" });
+  }
+
+  let targetUrl;
+  try {
+    targetUrl = new URL(String(urlParam));
+  } catch {
+    return res.status(400).json({ error: "Invalid url" });
+  }
+
+  if (!isAllowedHost(targetUrl)) {
+    return res.status(403).json({ error: "Host not allowed" });
+  }
+
+  try {
+    const upstream = await fetchUpstream(targetUrl, req);
+    const html = await upstream.text();
+    const videoUrl = extractVideoUrl(html);
+
+    if (!videoUrl) {
+      return res.status(422).send("Could not extract video URL.");
+    }
+
+    const proxiedVideo = makeAssetUrl(videoUrl);
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    return res.send(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TikTok Video</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; }
+      video { width: 100%; height: 100%; object-fit: contain; }
+    </style>
+  </head>
+  <body>
+    <video controls playsinline src="${proxiedVideo}"></video>
+  </body>
+</html>`);
+  } catch {
+    return res.status(502).json({ error: "Proxy failed" });
   }
 });
 

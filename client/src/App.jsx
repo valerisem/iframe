@@ -98,7 +98,7 @@ export default function App() {
       return "";
     }
     const base = PROXY_BASE_URL.endsWith("/") ? PROXY_BASE_URL.slice(0, -1) : PROXY_BASE_URL;
-    return `${base}/proxy?url=${encodeURIComponent(videoUrl)}`;
+    return `${base}/video?url=${encodeURIComponent(videoUrl)}`;
   }, [videoUrl]);
 
   if (loading) {
