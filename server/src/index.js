@@ -124,7 +124,7 @@ function findVideoUrlInObject(root) {
     if (!node) continue;
 
     if (typeof node === "string") {
-      const match = node.match(/https?:\\/\\/[^\\s"]+\\.mp4[^\\s"]*/);
+      const match = node.match(/https?:\/\/[^\s"]+\.mp4[^\s"]*/);
       if (match?.[0]) return decodeEscapedUrl(match[0]);
       continue;
     }
