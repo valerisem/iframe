@@ -7,6 +7,7 @@ const COLUMN_ID = import.meta.env.VITE_COLUMN_ID || "link4__1";
 const PROXY_BASE_URL = import.meta.env.VITE_PROXY_BASE_URL || "";
 const BROWSER_BASE_URL = import.meta.env.VITE_BROWSER_BASE_URL || "";
 const BROWSER_TOKEN = import.meta.env.VITE_BROWSER_TOKEN || "";
+const OPEN_BASE_URL = import.meta.env.VITE_OPEN_BASE_URL || BROWSER_BASE_URL;
 const RENDER_MODE = import.meta.env.VITE_RENDER_MODE || "proxy";
 
 function extractUrl(columnValue) {
@@ -110,7 +111,7 @@ export default function App() {
   useEffect(() => {
     if (RENDER_MODE !== "browser") return;
     if (!videoUrl || !BROWSER_BASE_URL || !BROWSER_TOKEN) return;
-    const base = BROWSER_BASE_URL.endsWith("/") ? BROWSER_BASE_URL.slice(0, -1) : BROWSER_BASE_URL;
+    const base = OPEN_BASE_URL.endsWith("/") ? OPEN_BASE_URL.slice(0, -1) : OPEN_BASE_URL;
     const openUrl = `${base}/open?token=${encodeURIComponent(BROWSER_TOKEN)}&url=${encodeURIComponent(videoUrl)}`;
     fetch(openUrl).catch(() => {});
   }, [videoUrl]);
