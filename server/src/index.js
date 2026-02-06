@@ -82,6 +82,54 @@ function rewriteHtml(html, baseUrl) {
     });
   }
 
+  const injectScript = `
+  <script>
+  (function() {
+    const proxyBase = window.location.origin;
+    const allowed = ["tiktok.com","tiktokcdn.com","tiktokcdn-eu.com","tiktokcdn-us.com","byteoversea.com","muscdn.com"];
+    const isAllowedHost = (host) => allowed.some((d) => host === d || host.endsWith("." + d));
+    const makeUrl = (u) => {
+      try {
+        const abs = new URL(u, "https://www.tiktok.com");
+        if (!isAllowedHost(abs.hostname)) return u;
+        return proxyBase + "${ASSET_BASE_PATH}?url=" + encodeURIComponent(abs.toString());
+      } catch {
+        return u;
+      }
+    };
+    const origFetch = window.fetch;
+    if (origFetch) {
+      window.fetch = function(input, init) {
+        const url = typeof input === "string" ? input : (input && input.url) || "";
+        const newUrl = makeUrl(url);
+        if (typeof input === "string") return origFetch(newUrl, init);
+        const req = new Request(newUrl, input);
+        return origFetch(req, init);
+      };
+    }
+    const origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+      return origOpen.call(this, method, makeUrl(url), ...rest);
+    };
+    const origSet = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function(name, value) {
+      if (name === "src" || name === "href") {
+        value = makeUrl(value);
+      }
+      return origSet.call(this, name, value);
+    };
+    const desc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, "src");
+    if (desc && desc.set) {
+      Object.defineProperty(HTMLScriptElement.prototype, "src", {
+        set: function(value) { return desc.set.call(this, makeUrl(value)); },
+        get: desc.get
+      });
+    }
+  })();
+  </script>
+  `;
+  $("head").prepend(injectScript);
+
   return $.html();
 }
 
@@ -415,6 +463,51 @@ app.get(VIDEO_BASE_PATH, async (req, res) => {
 </html>`);
   } catch {
     return res.status(502).json({ error: "Proxy failed" });
+  }
+});
+
+app.get("*", async (req, res) => {
+  const knownPaths = new Set([
+    "/health",
+    PROXY_BASE_PATH,
+    ASSET_BASE_PATH,
+    VIDEO_BASE_PATH,
+    "/egress"
+  ]);
+  if (knownPaths.has(req.path)) {
+    return res.status(404).send("Not found");
+  }
+
+  const allowedExt = [
+    ".js", ".css", ".map", ".json",
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
+    ".woff", ".woff2", ".ttf", ".mp4"
+  ];
+  const hasAllowedExt = allowedExt.some((ext) => req.path.endsWith(ext));
+  const hasAllowedPrefix = req.path.startsWith("/node/") || req.path.startsWith("/i18n/") || req.path.startsWith("/pns/") || req.path.startsWith("/api/");
+
+  if (!hasAllowedExt && !hasAllowedPrefix) {
+    return res.status(404).send("Not found");
+  }
+
+  try {
+    const targetUrl = new URL(`https://www.tiktok.com${req.originalUrl}`);
+    if (!isAllowedHost(targetUrl)) {
+      return res.status(403).json({ error: "Host not allowed" });
+    }
+    const upstream = await fetchUpstream(targetUrl, req);
+    const headers = stripProblemHeaders(Object.fromEntries(upstream.headers.entries()));
+    for (const [key, value] of Object.entries(headers)) {
+      res.setHeader(key, value);
+    }
+    res.status(upstream.status);
+    if (upstream.body) {
+      Readable.fromWeb(upstream.body).pipe(res);
+    } else {
+      res.end();
+    }
+  } catch {
+    res.status(502).json({ error: "Proxy failed" });
   }
 });
 
