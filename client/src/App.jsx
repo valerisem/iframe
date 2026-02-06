@@ -8,6 +8,7 @@ const PROXY_BASE_URL = import.meta.env.VITE_PROXY_BASE_URL || "";
 const BROWSER_BASE_URL = import.meta.env.VITE_BROWSER_BASE_URL || "";
 const BROWSER_TOKEN = import.meta.env.VITE_BROWSER_TOKEN || "";
 const OPEN_BASE_URL = import.meta.env.VITE_OPEN_BASE_URL || BROWSER_BASE_URL;
+const SESSION_BASE_URL = import.meta.env.VITE_SESSION_BASE_URL || OPEN_BASE_URL;
 const RENDER_MODE = import.meta.env.VITE_RENDER_MODE || "proxy";
 
 function extractUrl(columnValue) {
@@ -34,6 +35,8 @@ export default function App() {
   const [contextTimeout, setContextTimeout] = useState(false);
   const [contextError, setContextError] = useState("");
   const [apiStatus, setApiStatus] = useState("");
+  const [browserUrl, setBrowserUrl] = useState("");
+  const [userId, setUserId] = useState(null);
   const contextTimerRef = useRef(null);
 
   useEffect(() => {
@@ -51,8 +54,10 @@ export default function App() {
       setContextRaw(ctx);
       const nextItemId = ctx.itemId || ctx.itemId?.toString();
       const nextBoardId = ctx.boardId || ctx.boardId?.toString();
+      const nextUserId = ctx.user?.id || ctx.userId || ctx.user?.id?.toString();
       setItemId(nextItemId);
       setBoardId(nextBoardId);
+      setUserId(nextUserId);
       if (!nextItemId) {
         setContextError("Missing itemId in monday context.");
       } else {
@@ -95,7 +100,7 @@ export default function App() {
   const proxiedUrl = useMemo(() => {
     if (!videoUrl) return "";
     if (RENDER_MODE === "browser") {
-      return BROWSER_BASE_URL;
+      return browserUrl || "";
     }
     if (!PROXY_BASE_URL) return "";
     try {
@@ -110,11 +115,17 @@ export default function App() {
 
   useEffect(() => {
     if (RENDER_MODE !== "browser") return;
-    if (!videoUrl || !BROWSER_BASE_URL || !BROWSER_TOKEN) return;
-    const base = OPEN_BASE_URL.endsWith("/") ? OPEN_BASE_URL.slice(0, -1) : OPEN_BASE_URL;
-    const openUrl = `${base}/open?token=${encodeURIComponent(BROWSER_TOKEN)}&url=${encodeURIComponent(videoUrl)}`;
-    fetch(openUrl).catch(() => {});
-  }, [videoUrl]);
+    if (!videoUrl || !BROWSER_TOKEN || !SESSION_BASE_URL) return;
+    if (!userId) return;
+    const base = SESSION_BASE_URL.endsWith("/") ? SESSION_BASE_URL.slice(0, -1) : SESSION_BASE_URL;
+    const userKey = userId;
+    const sessionUrl = `${base}/session?token=${encodeURIComponent(BROWSER_TOKEN)}&user=${encodeURIComponent(userKey)}`;
+    fetch(sessionUrl).then((res) => res.json()).then((data) => {
+      if (data?.browserUrl) setBrowserUrl(data.browserUrl);
+      const openUrl = `${base}/open?token=${encodeURIComponent(BROWSER_TOKEN)}&user=${encodeURIComponent(userKey)}&url=${encodeURIComponent(videoUrl)}`;
+      return fetch(openUrl);
+    }).catch(() => {});
+  }, [videoUrl, userId]);
 
   if (loading) {
     return (
@@ -148,11 +159,11 @@ export default function App() {
     );
   }
 
-  if (RENDER_MODE === "browser" && (!BROWSER_BASE_URL || !BROWSER_TOKEN)) {
+  if (RENDER_MODE === "browser" && (!BROWSER_TOKEN || !SESSION_BASE_URL)) {
     return (
       <div className="container">
         <div className="card error">
-          Missing `VITE_BROWSER_BASE_URL` or `VITE_BROWSER_TOKEN`.
+          Missing `VITE_SESSION_BASE_URL` or `VITE_BROWSER_TOKEN`.
         </div>
       </div>
     );
