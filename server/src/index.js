@@ -5,8 +5,14 @@ import dotenv from "dotenv";
 import { load as loadHtml } from "cheerio";
 import { URL } from "url";
 import { Readable } from "stream";
+import { Agent, setGlobalDispatcher } from "undici";
 
 dotenv.config();
+
+setGlobalDispatcher(new Agent({
+  bodyTimeout: 0,
+  headersTimeout: 0
+}));
 
 const app = express();
 const PORT = process.env.PORT || 8787;
