@@ -239,6 +239,18 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/egress", async (_req, res) => {
+  try {
+    const ipRes = await fetch("https://api.ipify.org?format=json");
+    const ipJson = await ipRes.json();
+    const geoRes = await fetch(`https://ipapi.co/${ipJson.ip}/json/`);
+    const geoJson = await geoRes.json();
+    res.json({ ip: ipJson.ip, geo: geoJson });
+  } catch {
+    res.status(502).json({ error: "Failed to resolve egress IP" });
+  }
+});
+
 app.get(PROXY_BASE_PATH, async (req, res) => {
   const urlParam = req.query.url;
   if (!urlParam) {
