@@ -37,6 +37,7 @@ export default function App() {
   const [apiStatus, setApiStatus] = useState("");
   const [browserUrl, setBrowserUrl] = useState("");
   const [userId, setUserId] = useState(null);
+  const [sessionStatus, setSessionStatus] = useState("");
   const contextTimerRef = useRef(null);
 
   useEffect(() => {
@@ -120,11 +121,24 @@ export default function App() {
     const base = SESSION_BASE_URL.endsWith("/") ? SESSION_BASE_URL.slice(0, -1) : SESSION_BASE_URL;
     const userKey = userId;
     const sessionUrl = `${base}/session?token=${encodeURIComponent(BROWSER_TOKEN)}&user=${encodeURIComponent(userKey)}`;
-    fetch(sessionUrl).then((res) => res.json()).then((data) => {
-      if (data?.browserUrl) setBrowserUrl(data.browserUrl);
+    setSessionStatus("Requesting session...");
+    fetch(sessionUrl).then((res) => {
+      setSessionStatus(`Session status: ${res.status}`);
+      return res.json();
+    }).then((data) => {
+      if (data?.browserUrl) {
+        setBrowserUrl(data.browserUrl);
+        setSessionStatus(`Session ok: ${data.browserUrl}`);
+      } else {
+        setSessionStatus(`Session missing browserUrl`);
+      }
       const openUrl = `${base}/open?token=${encodeURIComponent(BROWSER_TOKEN)}&user=${encodeURIComponent(userKey)}&url=${encodeURIComponent(videoUrl)}`;
-      return fetch(openUrl);
-    }).catch(() => {});
+      return fetch(openUrl).then((openRes) => {
+        setSessionStatus((prev) => `${prev} | open ${openRes.status}`);
+      });
+    }).catch((err) => {
+      setSessionStatus(`Session error: ${err?.message || "unknown"}`);
+    });
   }, [videoUrl, userId]);
 
   if (loading) {
@@ -177,6 +191,7 @@ export default function App() {
           <div>userId: {userId || "none"}</div>
           <div>itemId: {itemId || "none"}</div>
           <div>videoUrl: {videoUrl || "none"}</div>
+          <div>{sessionStatus}</div>
         </div>
       </div>
     );
