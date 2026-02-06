@@ -169,6 +169,19 @@ export default function App() {
     );
   }
 
+  if (RENDER_MODE === "browser" && !browserUrl) {
+    return (
+      <div className="container">
+        <div className="card">Starting UK browser session…</div>
+        <div className="card">
+          <div>userId: {userId || "none"}</div>
+          <div>itemId: {itemId || "none"}</div>
+          <div>videoUrl: {videoUrl || "none"}</div>
+        </div>
+      </div>
+    );
+  }
+
   if (RENDER_MODE !== "browser" && !PROXY_BASE_URL) {
     return (
       <div className="container">
