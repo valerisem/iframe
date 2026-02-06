@@ -7,6 +7,8 @@ import { URL } from "url";
 import { Readable } from "stream";
 import { Agent, setGlobalDispatcher } from "undici";
 import { execFile } from "child_process";
+import httpProxy from "http-proxy";
+import net from "net";
 
 dotenv.config();
 
@@ -21,6 +23,8 @@ const PROXY_BASE_PATH = process.env.PROXY_BASE_PATH || "/proxy";
 const ASSET_BASE_PATH = process.env.ASSET_BASE_PATH || "/asset";
 const VIDEO_BASE_PATH = process.env.VIDEO_BASE_PATH || "/video";
 const OPEN_TOKEN = process.env.OPEN_TOKEN || "";
+const BROWSER_PUBLIC_BASE = process.env.BROWSER_PUBLIC_BASE || "";
+const BROWSER_PORT_START = Number(process.env.BROWSER_PORT_START || 5901);
 
 const DEFAULT_ALLOWED_HOSTS = [
   ".tiktok.com",
@@ -49,6 +53,12 @@ app.use(cors({
   origin: true,
   credentials: true
 }));
+
+const proxy = httpProxy.createProxyServer({ ws: true, xfwd: true });
+const sessionsByUser = new Map();
+const sessionsById = new Map();
+const usedPorts = new Set();
+let portCursor = BROWSER_PORT_START;
 
 function isAllowedHost(url) {
   const hostname = url.hostname.toLowerCase();
@@ -160,6 +170,79 @@ function stripProblemHeaders(headers) {
     }
   }
   return result;
+}
+
+function getNextPort() {
+  let port = portCursor;
+  while (usedPorts.has(port)) {
+    port += 1;
+  }
+  portCursor = port + 1;
+  usedPorts.add(port);
+  return port;
+}
+
+function getFreePort() {
+  return new Promise((resolve) => {
+    const port = getNextPort();
+    const server = net.createServer();
+    server.unref();
+    server.on("error", () => resolve(getFreePort()));
+    server.listen({ port, host: "127.0.0.1" }, () => {
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+function createSession(userKey) {
+  return new Promise(async (resolve, reject) => {
+    const id = `s_${Math.random().toString(36).slice(2, 10)}`;
+    const port = await getFreePort();
+    const name = `uk-browser-${id}`;
+
+    const args = [
+      "docker",
+      "run",
+      "-d",
+      "--name",
+      name,
+      "-p",
+      `127.0.0.1:${port}:5800`,
+      "jlesage/chromium"
+    ];
+
+    execFile("sudo", args, (err, stdout, stderr) => {
+      if (err) {
+        usedPorts.delete(port);
+        return reject(new Error(stderr || err.message));
+      }
+      const session = { id, port, name, userKey, createdAt: Date.now(), lastUsed: Date.now() };
+      sessionsByUser.set(userKey, session);
+      sessionsById.set(id, session);
+      return resolve(session);
+    });
+  });
+}
+
+function openInSession(session, url) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "docker",
+      "exec",
+      "-e",
+      `TARGET_URL=${url}`,
+      session.name,
+      "sh",
+      "-lc",
+      "xdg-open \"$TARGET_URL\" || chromium \"$TARGET_URL\" || chromium-browser \"$TARGET_URL\""
+    ];
+    execFile("sudo", args, (err, stdout, stderr) => {
+      if (err) {
+        return reject(new Error(stderr || err.message));
+      }
+      return resolve(stdout.trim());
+    });
+  });
 }
 
 function decodeEscapedUrl(value) {
@@ -307,6 +390,34 @@ app.get("/egress", async (_req, res) => {
   }
 });
 
+app.get("/session", async (req, res) => {
+  const token = String(req.query.token || "");
+  if (!OPEN_TOKEN || token !== OPEN_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const userKey = String(req.query.user || "");
+  if (!userKey) {
+    return res.status(400).json({ error: "Missing user" });
+  }
+
+  let session = sessionsByUser.get(userKey);
+  if (!session) {
+    try {
+      session = await createSession(userKey);
+    } catch (err) {
+      return res.status(500).json({ error: "Failed to create session", details: err.message });
+    }
+  }
+
+  session.lastUsed = Date.now();
+  const base = BROWSER_PUBLIC_BASE || `${req.protocol}://${req.get("host")}`;
+  return res.json({
+    sessionId: session.id,
+    browserUrl: `${base}/browser/${session.id}/`
+  });
+});
+
 app.get("/open", async (req, res) => {
   const token = String(req.query.token || "");
   if (!OPEN_TOKEN || token !== OPEN_TOKEN) {
@@ -314,6 +425,7 @@ app.get("/open", async (req, res) => {
   }
 
   const urlParam = req.query.url;
+  const userKey = String(req.query.user || "");
   if (!urlParam) {
     return res.status(400).json({ error: "Missing url" });
   }
@@ -329,23 +441,25 @@ app.get("/open", async (req, res) => {
     return res.status(403).json({ error: "Host not allowed" });
   }
 
-  const args = [
-    "docker",
-    "exec",
-    "-e",
-    `TARGET_URL=${targetUrl.toString()}`,
-    "uk-browser",
-    "sh",
-    "-lc",
-    "xdg-open \"$TARGET_URL\" || chromium \"$TARGET_URL\" || chromium-browser \"$TARGET_URL\""
-  ];
-
-  execFile("sudo", args, (err, stdout, stderr) => {
-    if (err) {
-      return res.status(500).json({ error: "Failed to open URL", details: stderr || err.message });
+  let session = userKey ? sessionsByUser.get(userKey) : null;
+  if (!session) {
+    if (!userKey) {
+      return res.status(400).json({ error: "Missing user" });
     }
-    return res.json({ ok: true, output: stdout.trim() });
-  });
+    try {
+      session = await createSession(userKey);
+    } catch (err) {
+      return res.status(500).json({ error: "Failed to create session", details: err.message });
+    }
+  }
+
+  try {
+    const output = await openInSession(session, targetUrl.toString());
+    session.lastUsed = Date.now();
+    return res.json({ ok: true, output, sessionId: session.id });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to open URL", details: err.message });
+  }
 });
 
 app.get(PROXY_BASE_PATH, async (req, res) => {
@@ -521,7 +635,9 @@ app.get("*", async (req, res) => {
     PROXY_BASE_PATH,
     ASSET_BASE_PATH,
     VIDEO_BASE_PATH,
-    "/egress"
+    "/egress",
+    "/session",
+    "/open"
   ]);
   if (knownPaths.has(req.path)) {
     return res.status(404).send("Not found");
@@ -558,6 +674,18 @@ app.get("*", async (req, res) => {
   } catch {
     res.status(502).json({ error: "Proxy failed" });
   }
+});
+
+app.use("/browser/:id", (req, res) => {
+  const sessionId = req.params.id;
+  const session = sessionsById.get(sessionId);
+  if (!session) {
+    return res.status(404).send("Session not found");
+  }
+  const target = `http://127.0.0.1:${session.port}`;
+  proxy.web(req, res, { target, changeOrigin: true }, () => {
+    res.status(502).send("Proxy error");
+  });
 });
 
 app.listen(PORT, () => {
