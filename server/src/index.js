@@ -243,7 +243,7 @@ app.get("/egress", async (_req, res) => {
   try {
     const ipRes = await fetch("https://api.ipify.org?format=json");
     const ipJson = await ipRes.json();
-    const geoRes = await fetch(`https://ipapi.co/${ipJson.ip}/json/`);
+    const geoRes = await fetch(`https://ipinfo.io/${ipJson.ip}/json`);
     const geoJson = await geoRes.json();
     res.json({ ip: ipJson.ip, geo: geoJson });
   } catch {
