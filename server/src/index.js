@@ -676,11 +676,17 @@ app.get("*", async (req, res) => {
   }
 });
 
-app.use("/browser/:id", (req, res) => {
+app.use("/browser/:id", async (req, res) => {
   const sessionId = req.params.id;
-  const session = sessionsById.get(sessionId);
+  let session = sessionsById.get(sessionId);
   if (!session) {
-    return res.status(404).send("Session not found");
+    try {
+      session = await createSession(sessionId);
+      sessionsById.set(sessionId, session);
+      sessionsByUser.set(sessionId, session);
+    } catch (err) {
+      return res.status(500).send(`Failed to create session: ${err.message}`);
+    }
   }
   const target = `http://127.0.0.1:${session.port}`;
   proxy.web(req, res, { target, changeOrigin: true }, () => {

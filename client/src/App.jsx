@@ -116,29 +116,19 @@ export default function App() {
 
   useEffect(() => {
     if (RENDER_MODE !== "browser") return;
-    if (!videoUrl || !BROWSER_TOKEN || !SESSION_BASE_URL) return;
+    if (!videoUrl || !BROWSER_TOKEN || !SESSION_BASE_URL || !BROWSER_BASE_URL) return;
     if (!userId) return;
-    const base = SESSION_BASE_URL.endsWith("/") ? SESSION_BASE_URL.slice(0, -1) : SESSION_BASE_URL;
+    const browserBase = BROWSER_BASE_URL.endsWith("/") ? BROWSER_BASE_URL.slice(0, -1) : BROWSER_BASE_URL;
+    const openBase = SESSION_BASE_URL.endsWith("/") ? SESSION_BASE_URL.slice(0, -1) : SESSION_BASE_URL;
     const userKey = userId;
-    const sessionUrl = `${base}/session?token=${encodeURIComponent(BROWSER_TOKEN)}&user=${encodeURIComponent(userKey)}`;
-    setSessionStatus("Requesting session...");
-    fetch(sessionUrl).then((res) => {
-      setSessionStatus(`Session status: ${res.status}`);
-      return res.json();
-    }).then((data) => {
-      if (data?.browserUrl) {
-        setBrowserUrl(data.browserUrl);
-        setSessionStatus(`Session ok: ${data.browserUrl}`);
-      } else {
-        setSessionStatus(`Session missing browserUrl`);
-      }
-      const openUrl = `${base}/open?token=${encodeURIComponent(BROWSER_TOKEN)}&user=${encodeURIComponent(userKey)}&url=${encodeURIComponent(videoUrl)}`;
-      return fetch(openUrl).then((openRes) => {
-        setSessionStatus((prev) => `${prev} | open ${openRes.status}`);
-      });
-    }).catch((err) => {
-      setSessionStatus(`Session error: ${err?.message || "unknown"}`);
-    });
+    const newBrowserUrl = `${browserBase}/browser/${encodeURIComponent(userKey)}/`;
+    setBrowserUrl(newBrowserUrl);
+    setSessionStatus(`Browser: ${newBrowserUrl}`);
+    const openUrl = `${openBase}/open?token=${encodeURIComponent(BROWSER_TOKEN)}&user=${encodeURIComponent(userKey)}&url=${encodeURIComponent(videoUrl)}`;
+    const img = new Image();
+    img.onload = () => setSessionStatus((prev) => `${prev} | open ok`);
+    img.onerror = () => setSessionStatus((prev) => `${prev} | open failed`);
+    img.src = openUrl;
   }, [videoUrl, userId]);
 
   if (loading) {
@@ -173,11 +163,11 @@ export default function App() {
     );
   }
 
-  if (RENDER_MODE === "browser" && (!BROWSER_TOKEN || !SESSION_BASE_URL)) {
+  if (RENDER_MODE === "browser" && (!BROWSER_TOKEN || !SESSION_BASE_URL || !BROWSER_BASE_URL)) {
     return (
       <div className="container">
         <div className="card error">
-          Missing `VITE_SESSION_BASE_URL` or `VITE_BROWSER_TOKEN`.
+          Missing `VITE_SESSION_BASE_URL`, `VITE_BROWSER_BASE_URL`, or `VITE_BROWSER_TOKEN`.
         </div>
       </div>
     );
