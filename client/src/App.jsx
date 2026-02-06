@@ -5,6 +5,9 @@ const monday = mondaySdk();
 
 const COLUMN_ID = import.meta.env.VITE_COLUMN_ID || "link4__1";
 const PROXY_BASE_URL = import.meta.env.VITE_PROXY_BASE_URL || "";
+const BROWSER_BASE_URL = import.meta.env.VITE_BROWSER_BASE_URL || "";
+const BROWSER_TOKEN = import.meta.env.VITE_BROWSER_TOKEN || "";
+const RENDER_MODE = import.meta.env.VITE_RENDER_MODE || "proxy";
 
 function extractUrl(columnValue) {
   if (!columnValue) return "";
@@ -90,6 +93,9 @@ export default function App() {
 
   const proxiedUrl = useMemo(() => {
     if (!videoUrl) return "";
+    if (RENDER_MODE === "browser") {
+      return BROWSER_BASE_URL;
+    }
     if (!PROXY_BASE_URL) return "";
     try {
       const parsed = new URL(videoUrl);
@@ -98,7 +104,15 @@ export default function App() {
       return "";
     }
     const base = PROXY_BASE_URL.endsWith("/") ? PROXY_BASE_URL.slice(0, -1) : PROXY_BASE_URL;
-    return `${base}/video?url=${encodeURIComponent(videoUrl)}`;
+    return `${base}/proxy?url=${encodeURIComponent(videoUrl)}`;
+  }, [videoUrl]);
+
+  useEffect(() => {
+    if (RENDER_MODE !== "browser") return;
+    if (!videoUrl || !BROWSER_BASE_URL || !BROWSER_TOKEN) return;
+    const base = BROWSER_BASE_URL.endsWith("/") ? BROWSER_BASE_URL.slice(0, -1) : BROWSER_BASE_URL;
+    const openUrl = `${base}/open?token=${encodeURIComponent(BROWSER_TOKEN)}&url=${encodeURIComponent(videoUrl)}`;
+    fetch(openUrl).catch(() => {});
   }, [videoUrl]);
 
   if (loading) {
@@ -133,7 +147,17 @@ export default function App() {
     );
   }
 
-  if (!PROXY_BASE_URL) {
+  if (RENDER_MODE === "browser" && (!BROWSER_BASE_URL || !BROWSER_TOKEN)) {
+    return (
+      <div className="container">
+        <div className="card error">
+          Missing `VITE_BROWSER_BASE_URL` or `VITE_BROWSER_TOKEN`.
+        </div>
+      </div>
+    );
+  }
+
+  if (RENDER_MODE !== "browser" && !PROXY_BASE_URL) {
     return (
       <div className="container">
         <div className="card error">

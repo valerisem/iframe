@@ -6,6 +6,7 @@ import { load as loadHtml } from "cheerio";
 import { URL } from "url";
 import { Readable } from "stream";
 import { Agent, setGlobalDispatcher } from "undici";
+import { execFile } from "child_process";
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ const PORT = process.env.PORT || 8787;
 const PROXY_BASE_PATH = process.env.PROXY_BASE_PATH || "/proxy";
 const ASSET_BASE_PATH = process.env.ASSET_BASE_PATH || "/asset";
 const VIDEO_BASE_PATH = process.env.VIDEO_BASE_PATH || "/video";
+const OPEN_TOKEN = process.env.OPEN_TOKEN || "";
 
 const DEFAULT_ALLOWED_HOSTS = [
   ".tiktok.com",
@@ -303,6 +305,47 @@ app.get("/egress", async (_req, res) => {
   } catch {
     res.status(502).json({ error: "Failed to resolve egress IP" });
   }
+});
+
+app.get("/open", async (req, res) => {
+  const token = String(req.query.token || "");
+  if (!OPEN_TOKEN || token !== OPEN_TOKEN) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const urlParam = req.query.url;
+  if (!urlParam) {
+    return res.status(400).json({ error: "Missing url" });
+  }
+
+  let targetUrl;
+  try {
+    targetUrl = new URL(String(urlParam));
+  } catch {
+    return res.status(400).json({ error: "Invalid url" });
+  }
+
+  if (!isAllowedHost(targetUrl)) {
+    return res.status(403).json({ error: "Host not allowed" });
+  }
+
+  const args = [
+    "docker",
+    "exec",
+    "-e",
+    `TARGET_URL=${targetUrl.toString()}`,
+    "uk-browser",
+    "sh",
+    "-lc",
+    "xdg-open \"$TARGET_URL\" || chromium \"$TARGET_URL\" || chromium-browser \"$TARGET_URL\""
+  ];
+
+  execFile("sudo", args, (err, stdout, stderr) => {
+    if (err) {
+      return res.status(500).json({ error: "Failed to open URL", details: stderr || err.message });
+    }
+    return res.json({ ok: true, output: stdout.trim() });
+  });
 });
 
 app.get(PROXY_BASE_PATH, async (req, res) => {
